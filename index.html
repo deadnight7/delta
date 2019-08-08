@@ -136,7 +136,7 @@
                     <br/>
 
                     <div class="
-                    col-xs-12 col-md-12 col-lg-12" style="height: 480px; border:1px solid #CCC;">
+                    col-xs-12 col-md-12 col-lg-12" style="height: 700px; border:1px solid #CCC;">
                         <div id="map"
                              style="height: 100%;width: 100%;position: absolute;top: 0px;left: 0px;
                  background-color: transparent;
@@ -310,6 +310,9 @@
     let latitude = 19.075983;
     let longitude = 72.877655;
 
+    let userLat = 0;
+    let userLng = 0;
+
     function moveMap(map){
         map.setCenter({lat: latitude, lng: longitude});
         map.setZoom(14);
@@ -319,6 +322,7 @@
     function getLocation(){
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(showPosition);
+            navigator.geolocation.getCurrentPosition(setUserCenter);
         } else {
             console.log("Geolocation is not supported");
             //Showing Default Map Location
@@ -333,6 +337,13 @@
         longitude = position.coords.longitude;
 
         moveMyMapAndMarker(latitude, longitude);
+    }
+
+
+    function setUserCenter (position) {
+        console.log(position.coords.latitude + " " + position.coords.longitude);
+        userLat = position.coords.latitude;
+        userLng = position.coords.longitude;
     }
 
 
@@ -399,8 +410,8 @@
 
             console.log(target.getPosition().lat + " " + target.getPosition().lng)
 
-            //Optionally : Reverse Geocode an address and print it in
-
+            let coords = {lat: latitude, lng: longitude};
+            updateRouteOnMap(coords);
         }
     }, false);
 
@@ -521,9 +532,8 @@
     let marker = new H.map.DomMarker(coords, {  icon: domIcon });
     marker.draggable = true;
 
-
     // Add the marker to the map and center the map at the location of the marker:
-    map.addObject(marker);
+    //map.addObject(marker);
     map.setCenter(coords);
 
     var forMarker = true;
@@ -547,6 +557,102 @@
     //moveMyMapAndMarker(latitude, longitude)
     //moveMap(map);
 
+    // Define a callback function to process the routing response:
+    var onResult = function(result) {
+        var route,
+            routeShape,
+            startPoint,
+            endPoint,
+            linestring;
+        if(result.response.route) {
+            // Pick the first route from the response:
+            route = result.response.route[0];
+            // Pick the route's shape:
+            routeShape = route.shape;
+
+            // Create a linestring to use as a point source for the route line
+            linestring = new H.geo.LineString();
+
+            // Push all the points in the shape into the linestring:
+            routeShape.forEach(function(point) {
+                var parts = point.split(',');
+                linestring.pushLatLngAlt(parts[0], parts[1]);
+            });
+
+            // Retrieve the mapped positions of the requested waypoints:
+            startPoint = route.waypoint[0].mappedPosition;
+            endPoint = route.waypoint[1].mappedPosition;
+
+            if (routeLine != null) {
+                map.removeObjects([ routeLine ]);//addObjects([routeLine, startMarker, endMarker]);
+            }
+
+            // Create a polyline to display the route:
+            routeLine = new H.map.Polyline(linestring, {
+                style: { strokeColor: '#5698d3', lineWidth: 3 },
+                arrows: { fillColor: 'black', frequency: 2, width: 2, length: 2 }
+            });
+
+            // Create a marker for the start point:
+            startMarker =
+                new H.map.DomMarker({
+                    lat: startPoint.latitude,
+                    lng: startPoint.longitude
+                }, {  icon: domIcon });
+            //startMarker.draggable = true;
+            // new H.map.Marker({
+            //     lat: startPoint.latitude,
+            //     lng: startPoint.longitude
+            // });
+
+            // Create a marker for the end point:
+            if (endMarker == null) {
+                endMarker =
+                    new H.map.DomMarker({
+                        lat: endPoint.latitude,
+                        lng: endPoint.longitude
+                    }, {  icon: domIcon });
+                    // new H.map.Marker({
+                    //     lat: endPoint.latitude,
+                    //     lng: endPoint.longitude
+                    // });
+            }
+            else {
+                endMarker.setPosition({
+                    lat: endPoint.latitude,
+                    lng: endPoint.longitude
+                })
+            }
+
+            endMarker.draggable = true;
+
+            // Add the route polyline and the two markers to the map:
+            map.addObjects([routeLine, startMarker, endMarker]);
+
+            // Set the map's viewport to make the whole route visible:
+            //map.setViewBounds(routeLine.getBounds());
+            map.getViewModel().setLookAtData({bounds: routeLine.getBoundingBox()});
+        }
+    };
+
+    var startMarker = null;
+    var endMarker = null;
+    var routeLine = null;
+
+    //loop through the trackingPoints.data array backwards and put data in routingParameters array as shown below
+    // Create the parameters for the routing request:
+    var routingParameters = {
+        // The routing mode:
+        'mode': 'fastest;car;traffic:disabled',
+        // The start point of the route:
+        'waypoint0': 'geo!50.1120423728813,8.68340740740811',
+        'waypoint1': 'geo!52.5309916298853,13.3846220493377',
+        // To retrieve the shape of the route we choose the route
+        // representation mode 'display'
+        'representation': 'display'
+    };
+
+
     function dropDownHide(){
         $(".dropdown-menu").css("display", "false")
     }
@@ -555,7 +661,6 @@
      * Will Navigate to area selected on autocomplete
      */
     function autocompleteNavigateToArea (location) {
-
         if (location && location.name != "") {
             latitude = location.position[0];
             longitude = location.position[1];
@@ -599,6 +704,7 @@
     // use this hash to cache search results
     window.query_cache = {};
     let marker2 = null;
+    var router = null;
     function addNewMarkerToMap (location) {
 
         if (location && location.name != "") {
@@ -617,18 +723,44 @@
             if (marker2 == null) {
                 marker2 = new H.map.DomMarker(coords, {  icon: domIcon });
                 marker2.draggable = true;
-                map.addObject(marker2);
+                //map.addObject(marker2);
             }
             else {
                 marker2.setPosition(coords)
                 //map.addObject();
             }
 
-            //Route Position based on the conditions
-
+            updateRouteOnMap(coords)
 
             //document.getElementById("address").value = location.name;
         }
+
+    }
+
+    function updateRouteOnMap (coords) {
+
+        //Route Position based on the conditions
+
+        // Get an instance of the routing service:
+        router = platform.getRoutingService();
+
+        // Call calculateRoute() with the routing parameters,
+        // the callback and an error callback function (called if a
+        // communication error occurs):
+        routingParameters = {
+            // The routing mode:
+            'mode': 'fastest;car;traffic:disabled',
+            // The start point of the route:
+            'waypoint0': 'geo!'+userLat+','+userLng+'',
+            'waypoint1': 'geo!'+coords.lat+','+coords.lng+'',
+            // To retrieve the shape of the route we choose the route
+            // representation mode 'display'
+            'representation': 'display'
+        };
+        router.calculateRoute(routingParameters, onResult,
+            function(error) {
+                console.log(error.message);
+            });
 
     }
 
@@ -694,8 +826,6 @@
             }, 150); // 300 ms
         }
     });
-
-
 
     function getPlacesAPI (placeName) {
         return new Promise ((resolve, reject) => {
